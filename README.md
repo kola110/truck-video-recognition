@@ -10,17 +10,28 @@
 - `--skip N` 跳帧推理，间隔帧复用上一轮的框
 - 可选 ffmpeg 推流（RTMP）到 ZLMediaKit，前端用 FLV/HLS 观看
 
-## 依赖
+## 环境（conda）
+
+本项目 Python 部分统一用 conda 环境运行：
 
 ```bash
-pip install ultralytics opencv-python
+# 创建环境（Python 3.11，ultralytics、OpenCV、ffmpeg 都走 conda-forge）
+conda create -n truck-video python=3.11 -y
+conda activate truck-video
+conda install -c conda-forge ultralytics opencv ffmpeg -y
 ```
 
-另需本机安装 `ffmpeg`。
+以后每次运行前先激活环境：
+
+```bash
+conda activate truck-video
+```
 
 ## 用法
 
 ```bash
+conda activate truck-video
+
 # 推流到 ZLMediaKit
 python rtsp_yolo_annotated.py --source "rtsp://..." --weights yolo26n.pt --push "rtmp://127.0.0.1:1935/live/yolo_annotated"
 
