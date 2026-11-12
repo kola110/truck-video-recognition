@@ -16,6 +16,10 @@ Usage (replace the two URLs with yours):
     # Local preview only, no push:
     python rtsp_yolo_annotated.py --source "rtsp://..." --no-push --show
 
+    # With ByteTrack tracking + best-frame crops for the OCR stage:
+    python rtsp_yolo_annotated.py --source "./truck.mp4" --no-push --show \
+        --track --save-best ./best_frames
+
 Watch the pushed stream (ZLMediaKit defaults; check your own ZLM config):
     FLV: http://<zlm-ip>:80/live/yolo_annotated.live.flv
     HLS: http://<zlm-ip>:80/live/yolo_annotated/hls.m3u8
@@ -27,8 +31,18 @@ Notes:
   - --skip 2 means: run the model every 2nd frame, redraw the previous
     boxes on the frames in between. Use 1 for every frame.
   - --device auto: CUDA + half precision when available, else CPU.
+  - --track: use model.track() with ByteTrack (persist=True) so each
+    vehicle keeps one ID across frames; plot() draws the ID on the box.
+    With --save-best DIR, the largest (best-view) crop of each vehicle
+    is saved once as track_<id>.jpg, plus a best.json manifest. That is
+    the "one OCR trigger per vehicle" input for stage 2 -- run OCR on
+    these crops instead of on every frame.
+  - With --track and --skip > 1, tracking persists across skipped
+    frames, but IDs may switch more often; use --skip 1 when the IDs
+    matter (e.g. when saving best frames for OCR).
 """
 import argparse
+import json
 import os
 import queue
 import subprocess
@@ -107,11 +121,73 @@ def draw_last_boxes(frame, boxes, names):
         x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
         cls = int(box.cls[0]) if box.cls is not None else -1
         conf = float(box.conf[0]) if box.conf is not None else 0.0
-        label = f"{names.get(cls, cls)} {conf:.2f}" if names else f"{cls} {conf:.2f}"
+        base = f"{names.get(cls, cls)} {conf:.2f}" if names else f"{cls} {conf:.2f}"
+        tid = int(box.id[0]) if box.id is not None else None
+        label = f"{base} id:{tid}" if tid is not None else base
         cv2.rectangle(out, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(out, label, (x1, max(y1 - 6, 12)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     return out
+
+
+class BestFrameSaver:
+    """Keep the single best (largest-box) crop per tracked vehicle.
+
+    OCR is expensive, so stage 2 should run on one good crop per vehicle,
+    not on every frame. For each track id we keep only the frame where
+    the box is largest; the crop is overwritten whenever a better frame
+    appears. A best.json manifest records what was saved.
+    """
+
+    def __init__(self, outdir: str, pad: int = 10):
+        self.outdir = outdir
+        self.pad = pad
+        self.best: dict = {}
+        os.makedirs(outdir, exist_ok=True)
+
+    def consider(self, frame, boxes, frame_idx: int) -> None:
+        if boxes is None or len(boxes) == 0:
+            return
+        h, w = frame.shape[:2]
+        for box in boxes:
+            if box.id is None:
+                continue
+            tid = int(box.id[0])
+            x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
+            area = max(x2 - x1, 0) * max(y2 - y1, 0)
+            if area <= 0:
+                continue
+            prev = self.best.get(tid)
+            if prev is not None and area <= prev["area"]:
+                continue
+            conf = float(box.conf[0]) if box.conf is not None else 0.0
+            px1 = max(x1 - self.pad, 0)
+            py1 = max(y1 - self.pad, 0)
+            px2 = min(x2 + self.pad, w)
+            py2 = min(y2 + self.pad, h)
+            path = os.path.join(self.outdir, f"track_{tid}.jpg")
+            cv2.imwrite(path, frame[py1:py2, px1:px2])
+            self.best[tid] = {
+                "track_id": tid,
+                "file": path,
+                "frame": frame_idx,
+                "conf": round(conf, 3),
+                "box": [x1, y1, x2, y2],
+                "area": area,
+                "time": time.strftime("%H:%M:%S"),
+            }
+            print(f"[track] id={tid} new best frame={frame_idx} "
+                  f"area={area} conf={conf:.2f} -> {path}", flush=True)
+
+    def write_manifest(self) -> None:
+        if not self.best:
+            return
+        path = os.path.join(self.outdir, "best.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(sorted(self.best.values(), key=lambda r: r["track_id"]),
+                      f, ensure_ascii=False, indent=2)
+        print(f"[track] manifest: {len(self.best)} vehicle(s) -> {path}",
+              flush=True)
 
 
 def start_ffmpeg(push_url: str, width: int, height: int, fps: float):
@@ -141,13 +217,28 @@ def main() -> int:
     ap.add_argument("--skip", type=int, default=1, help="infer every Nth frame")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--fps", type=float, default=25.0)
+    ap.add_argument("--track", action="store_true",
+                    help="enable ByteTrack tracking (stable id per vehicle)")
+    ap.add_argument("--tracker", default="bytetrack.yaml",
+                    help="tracker config for model.track()")
+    ap.add_argument("--save-best", default=None, metavar="DIR",
+                    help="with --track, save the best crop per vehicle here")
     args = ap.parse_args()
 
     device = pick_device(args.device)
     use_half = device != "cpu"
-    print(f"[info] device={device} half={use_half} skip={args.skip}", flush=True)
+    print(f"[info] device={device} half={use_half} skip={args.skip} "
+          f"track={args.track}", flush=True)
     model = YOLO(args.weights)
     names = model.names
+
+    saver = None
+    if args.save_best:
+        if not args.track:
+            print("[warn] --save-best needs --track; enabling tracking",
+                  flush=True)
+            args.track = True
+        saver = BestFrameSaver(args.save_best)
 
     reader = RTSPReader(args.source)
     reader.start()
@@ -165,10 +256,20 @@ def main() -> int:
             frame_idx += 1
 
             if frame_idx % max(args.skip, 1) == 1:
-                result = model(frame, conf=args.conf, imgsz=args.imgsz,
-                               device=device, half=use_half, verbose=False)[0]
+                if args.track:
+                    result = model.track(frame, persist=True,
+                                         tracker=args.tracker,
+                                         conf=args.conf, imgsz=args.imgsz,
+                                         device=device, half=use_half,
+                                         verbose=False)[0]
+                else:
+                    result = model(frame, conf=args.conf, imgsz=args.imgsz,
+                                   device=device, half=use_half,
+                                   verbose=False)[0]
                 last_boxes = result.boxes
-                annotated = result.plot()  # boxes + class + confidence, BGR
+                annotated = result.plot()  # boxes + class + conf (+ id), BGR
+                if saver is not None:
+                    saver.consider(frame, result.boxes, frame_idx)
             else:
                 annotated = draw_last_boxes(frame.copy(), last_boxes, names)
 
@@ -191,6 +292,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n[info] stopping", flush=True)
     finally:
+        if saver is not None:
+            saver.write_manifest()
         reader.stop_flag.set()
         if ffmpeg_proc is not None and ffmpeg_proc.stdin:
             try:

@@ -9,6 +9,7 @@
 - 读帧线程 + 队列，丢弃过期帧
 - `--skip N` 跳帧推理，间隔帧复用上一轮的框
 - 可选 ffmpeg 推流（RTMP）到 ZLMediaKit，前端用 FLV/HLS 观看
+- `--track` ByteTrack 跟踪：每辆车一个稳定 ID，框上带 ID；配合 `--save-best DIR` 每辆车只存一张最佳视角截图，供第二阶段 OCR 用
 
 ## 环境（conda）
 
@@ -40,6 +41,9 @@ python rtsp_yolo_annotated.py --source "rtsp://..." --no-push --show
 
 # 先用本地视频文件验证（不用摄像头和推流）
 python rtsp_yolo_annotated.py --source ./truck.mp4 --weights yolo26n.pt --no-push --show
+
+# 跟踪 + 最佳帧（每辆车只存一张最佳视角截图，供 OCR 用）
+python rtsp_yolo_annotated.py --source ./truck.mp4 --weights yolo26n.pt --no-push --show --track --save-best ./best_frames
 ```
 
 ZLMediaKit 默认观看地址（以你自己的配置为准）：
@@ -47,7 +51,14 @@ ZLMediaKit 默认观看地址（以你自己的配置为准）：
 - `http://<zlm-ip>:80/live/yolo_annotated.live.flv`
 - `http://<zlm-ip>:80/live/yolo_annotated/hls.m3u8`
 
-## 状态说明
+## 跟踪与最佳帧（`--track` / `--save-best`）
+
+一辆车在画面里通常待好几秒，如果每帧都做 OCR，算力会直接崩，还会给同一辆车入库几十条结果。正确的做法是：**检测持续跑，OCR 触发跑**。
+
+- `--track` 用 Ultralytics 内置的 ByteTrack（`model.track(persist=True)`），每辆车一个稳定 ID，框上会显示 `id:N`。
+- `--save-best DIR` 给每辆车只保留一张截图：取它在画面里框最大的那一帧（视角最好），存为 `track_<id>.jpg`，退出时再写一份 `best.json` 清单（track_id、帧号、置信度、框、面积）。
+- 第二阶段的 OCR 直接读这些截图就行，不用再碰视频流。
+- 注意：`--skip` 大于 1 时跟踪 ID 容易跳变，存最佳帧时建议用 `--skip 1`（默认就是 1）。
 
 - 默认权重 `yolo26n.pt` 首次运行时自动下载；也可以换成自己的货车模型权重。
 - 带框流只证明车辆检测：车牌和车门文字识别是第二阶段，需要专门的检测 + OCR。
