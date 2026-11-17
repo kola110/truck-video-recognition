@@ -1,0 +1,25 @@
+# 针对 CPU 慢速推理调优的 ByteTrack 配置。
+#
+# 背景：free-machine 上 CPU 推理约 5 fps，处理帧之间相隔约 5 个视频帧，
+# 检测抖动 + 时间间隔大导致跟踪频繁断裂（113 个跟踪 ID 对应约 2–3 辆车）。
+# 本配置只改两个参数，其余保持 Ultralytics 默认值。
+#
+# 用法（在仓库根目录）：
+#   python rtsp_yolo_annotated.py --source <视频> --track \
+#       --tracker trackers/bytetrack_cpu.yaml --save-best ./best_frames
+#
+# 改动说明：
+# - track_buffer 30 -> 90：丢失的轨道保留更久。按约 5 fps 的有效处理
+#   速率，30 帧只覆盖约 6 秒视频，检测漏一两帧就可能丢轨道；90 帧约 18 秒，
+#   给重匹配留出足够窗口，避免同一辆车反复开新 ID。
+# - new_track_thresh 0.6 -> 0.7：开新轨道的置信度门槛更高。边缘抖动的
+#   低置信度检测（如画面边缘的车辆，约 0.65）不再轻易开新 ID，只能并入
+#   已有轨道；货车约 0.82，仍可立即开轨道。
+
+tracker_type: bytetrack # tracker type, ['botsort', 'bytetrack']
+track_high_thresh: 0.5 # threshold for the first association
+track_low_thresh: 0.1 # threshold for the second association
+new_track_thresh: 0.7 # threshold for init new track if the detection does not match any tracks
+track_buffer: 90 # buffer to calculate the time when to remove tracks
+match_thresh: 0.8 # threshold for matching tracks
+fuse_score: False # Whether to fuse confidence scores with the iou distances before matching
