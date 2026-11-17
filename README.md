@@ -19,8 +19,10 @@
 # 创建环境（Python 3.11，ultralytics、OpenCV、ffmpeg 都走 conda-forge）
 conda create -n truck-video python=3.11 -y
 conda activate truck-video
-conda install -c conda-forge ultralytics opencv ffmpeg -y
+conda install -c conda-forge ultralytics opencv ffmpeg torchvision lap -y
 ```
+
+注意：conda-forge 的 ultralytics 不会自动带上 `torchvision`（`import ultralytics` 需要）和 `lap`（ByteTrack 跟踪做线性分配需要），必须手动装上，否则 `--track` 会在第一次推理时报 `No module named 'lap'`。
 
 以后每次运行前先激活环境：
 

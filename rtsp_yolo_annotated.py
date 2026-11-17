@@ -255,7 +255,9 @@ def main() -> int:
                 continue
             frame_idx += 1
 
-            if frame_idx % max(args.skip, 1) == 1:
+            # (frame_idx - 1) % skip: with --skip 1 every frame must infer
+            # (frame_idx % 1 is always 0, so `== 1` would never fire).
+            if (frame_idx - 1) % max(args.skip, 1) == 0:
                 if args.track:
                     result = model.track(frame, persist=True,
                                          tracker=args.tracker,
