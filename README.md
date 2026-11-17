@@ -66,3 +66,4 @@ ZLMediaKit 默认观看地址（以你自己的配置为准）：
 - 带框流只证明车辆检测：车牌和车门文字识别是第二阶段，需要专门的检测 + OCR。
 - 2026-11-17 首次在真实视频文件上跑通（154 秒近景录像，free-machine 上 CPU 运行）：检测与 ByteTrack 跟踪已验证（113 张最佳帧截图 + best.json）；车牌 OCR 已验证（边车修复后整帧读出车牌，113 张截图 7 张准确命中；识别率待提升，见 tools/plate_crop_ocr.py 实验）；真实摄像头与推流环境尚未测试。
 - tools/plate_crop_ocr.py：车牌区域裁剪放大实验脚本（裁截图下半部分、放大 2 倍再 OCR，与整图基线对比）。
+- tools/plate_detect_ocr.py：专用车牌检测器实验脚本（CCPD 训练的 YOLO26 模型定位车牌框，裁剪放大后 OCR）。模型权重需另行下载，见脚本 docstring。
