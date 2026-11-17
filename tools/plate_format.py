@@ -61,10 +61,17 @@ def extract_plate(text: str) -> str | None:
 
     标准形式：省份+城市+圆点+序号，如“浙M·MD598”。
     找不到返回 None。
+
+    两遍匹配：先在原文上找，再试去空格后的文本。去空格会把相邻
+    碎片拼成假车牌（如“浙M·MD5 ME 浙M·MD598”去空格后会先匹配到
+    “浙M·MD5ME”，把后面真正的车牌挤掉），所以原文优先；去空格
+    只用于恢复“浙M·MD5 98”这类字符间带空格的真车牌。
     """
     if not text:
         return None
-    match = _PLATE_RE.search(_normalize(text))
+    match = _PLATE_RE.search(text.upper())
+    if match is None:
+        match = _PLATE_RE.search(_normalize(text))
     if match is None:
         return None
     province, city, seq = match.groups()
