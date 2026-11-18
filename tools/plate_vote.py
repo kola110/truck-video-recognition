@@ -10,10 +10,10 @@
 - 合并清单 merged_best.json（tools/merge_tracks.py 的输出）：每组一条，
   含 group_id、成员 track_id 列表、代表截图；
 - 三轮 OCR 结果文件（--results 可重复给，每次都要带方法名）：
-  整图 OCR、裁剪放大 OCR、专用检测器 OCR。三轮文件格式略有不同，
-  本脚本都按“第一列是文件名、其余列都是识别文本”来解析：
-  整图/裁剪轮每行是“文件名<TAB>识别文本”；
-  检测器轮每行是“文件名<TAB>检测数<TAB>识别文本（多块用 | 连接）”。
+  整图 OCR、裁剪放大 OCR、专用检测器 OCR。三轮文件的分隔符不统一：
+  整图轮用空格分隔（文本里还含空格），裁剪轮和检测器轮用 Tab 分隔，
+  检测器轮还多一列检测数。解析时按第一个空白字符切分，文件名是
+  第一段，其余全当识别文本（文件名里不含空白，所以切分是安全的）。
 
 投票规则（两层，先看整体再看逐字）：
 1. 整串投票：同一组里所有成员截图、三轮方法提取到的车牌按整串计数，
@@ -87,8 +87,11 @@ def extract_all_plates(text: str) -> list[str]:
 def parse_results_file(path: Path) -> dict[str, list[str]]:
     """解析一份 OCR 结果文件，返回 {截图文件名: [提取到的车牌, ...]}。
 
-    行格式：第一列是文件名，其余列都是识别文本（检测器轮多一块检测数
-    列，那一列是纯数字，不含省份汉字，正则不会把它当成车牌）。
+    行格式：第一段是文件名，其余都是识别文本。三轮文件的分隔符不统一：
+    整图轮（ocr_run3.txt）用空格分隔，裁剪轮和检测器轮用 Tab 分隔，
+    检测器轮还多一列检测数。这里按“第一个空白字符”切分——文件名里
+    不含空白，所以第一段一定是文件名，剩下的全当识别文本；检测器轮
+    的数字列混在文本里，但它是纯数字，正则不会把它当成车牌。
     空行跳过；文件不存在时报错退出，不静默返回空结果。
     """
     if not path.exists():
@@ -98,9 +101,11 @@ def parse_results_file(path: Path) -> dict[str, list[str]]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        parts = line.split("\t")
-        filename = parts[0].strip()
-        text = "\t".join(parts[1:])
+        # 按第一个空白字符切分：兼容空格分隔（整图轮）和 Tab 分隔
+        # （裁剪轮、检测器轮）；文本里可能还有空格或 Tab，全部保留。
+        fields = line.split(None, 1)
+        filename = fields[0]
+        text = fields[1] if len(fields) > 1 else ""
         # 检测器轮的多块文本用 " | " 连接，先拆块再逐块提取，避免跨块
         # 拼出假车牌；整图/裁剪轮没有 " | "，拆分后只有一块，不受影响。
         plates: list[str] = []
