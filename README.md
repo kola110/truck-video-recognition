@@ -70,3 +70,4 @@ ZLMediaKit 默认观看地址（以你自己的配置为准）：
 - trackers/bytetrack_cpu.yaml：针对 CPU 慢速推理调优的 ByteTrack 配置（track_buffer 30→90，new_track_thresh 0.6→0.7），减少跟踪碎片化；运行时用 --tracker trackers/bytetrack_cpu.yaml。
 - tools/merge_tracks.py：事后轨道合并脚本（按最佳帧框的 IoU 合并同一车辆的碎片轨道，输出 merged_best.json）。
 - tools/plate_format.py：车牌格式校验模块（从 OCR 文本提取标准格式车牌，滤掉误读行与文字碎片；拦不住格式合法但字错的读法，如 8→9）。
+- tools/plate_vote.py：多截图投票脚本（按合并后的组汇总三轮 OCR 结果，整串多数票 + 逐字共识定车牌，平票标 TIE 交人工复核；纠正格式校验拦不住的字符级误读，如 8→9）。
