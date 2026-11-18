@@ -71,4 +71,4 @@ ZLMediaKit 默认观看地址（以你自己的配置为准）：
 - tools/merge_tracks.py：事后轨道合并脚本（按最佳帧框的 IoU 合并同一车辆的碎片轨道，输出 merged_best.json）。
 - tools/plate_format.py：车牌格式校验模块（从 OCR 文本提取标准格式车牌，滤掉误读行与文字碎片；拦不住格式合法但字错的读法，如 8→9）。
 - tools/plate_vote.py：多截图投票脚本（按合并后的组汇总三轮 OCR 结果，整串多数票 + 逐字共识定车牌，平票标 TIE 交人工复核；纠正格式校验拦不住的字符级误读，如 8→9）。
-- tools/whole_crop_ocr.py：整图 OCR 脚本（把最佳帧截图原样发给边车，逐张读出全部文字；验证车门文字、补查检测器漏掉的车牌；只用标准库）。
+- tools/whole_crop_ocr.py：整图 OCR 脚本（把最佳帧截图发给边车，逐张读出全部文字；验证车门文字、补查检测器漏掉的车牌；支持 --crop-frac 按比例裁区域、--max-side 缩小提速，需 PIL，用 video-ocr 环境跑）。
